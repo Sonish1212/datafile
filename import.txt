@@ -1,0 +1,345 @@
+====================================================================
+PATIENT MANAGEMENT SYSTEM — GRAPH DATABASE IMPLEMENTATION (Neo4j Aura)
+====================================================================
+--------------------------------------------------------------------
+SECTION 1: CREATE CONSTRAINTS / INDEXES
+--------------------------------------------------------------------
+
+CREATE CONSTRAINT patient_id_unique  IF NOT EXISTS
+FOR (p:Patient) REQUIRE p.patientId IS UNIQUE;
+
+CREATE CONSTRAINT doctor_id_unique   IF NOT EXISTS
+FOR (d:Doctor) REQUIRE d.doctorId IS UNIQUE;
+
+CREATE CONSTRAINT dept_id_unique     IF NOT EXISTS
+FOR (dep:Department) REQUIRE dep.deptId IS UNIQUE;
+
+CREATE CONSTRAINT appt_id_unique     IF NOT EXISTS
+FOR (a:Appointment) REQUIRE a.appointmentId IS UNIQUE;
+
+CREATE CONSTRAINT report_id_unique   IF NOT EXISTS
+FOR (r:MedicalReport) REQUIRE r.reportId IS UNIQUE;
+
+--------------------------------------------------------------------
+SECTION 2: IMPORT NODE DATA
+--------------------------------------------------------------------
+
+-- 2.1 IMPORT PATIENT NODES
+CALL {
+  LOAD CSV WITH HEADERS FROM
+  'https://raw.githubusercontent.com/Sonish1212/datafile/main/patient.csv' AS row
+  WITH row
+  WHERE row.patient_Id IS NOT NULL AND trim(row.patient_Id) <> ''
+
+  WITH
+    toInteger(trim(row.patient_Id)) AS patientId,
+    trim(coalesce(row.FName,'')) AS firstName,
+    trim(coalesce(row.LName,'')) AS lastName,
+    toLower(trim(coalesce(row.Gender,''))) AS gender,
+    trim(coalesce(row.contact_No,'')) AS contact,
+    trim(coalesce(row.pt_Address,'')) AS address,
+    CASE
+      WHEN row.Date_Of_Birth IS NOT NULL AND trim(row.Date_Of_Birth) <> ''
+      THEN date(datetime({
+        year:  toInteger(split(trim(row.Date_Of_Birth),'/')[2]),
+        month: toInteger(split(trim(row.Date_Of_Birth),'/')[1]),
+        day:   toInteger(split(trim(row.Date_Of_Birth),'/')[0])
+      }))
+      ELSE NULL END AS dob
+
+  MERGE (p:Patient {patientId: patientId})
+  SET p.name = trim(firstName + ' ' + lastName),
+      p.gender = gender,
+      p.dob = dob,
+      p.contact = contact,
+      p.address = address;
+} IN TRANSACTIONS OF 1000 ROWS;
+
+
+-- 2.2 IMPORT DEPARTMENT NODES
+CALL {
+  LOAD CSV WITH HEADERS FROM
+  'https://raw.githubusercontent.com/Sonish1212/datafile/main/deparments.csv' AS row
+  WITH row
+  WHERE row.dept_Id IS NOT NULL AND trim(row.dept_Id) <> ''
+
+  MERGE (dep:Department {deptId: toInteger(trim(row.dept_Id))})
+  SET dep.name = trim(coalesce(row.dept_Name,''));
+} IN TRANSACTIONS OF 1000 ROWS;
+
+
+-- 2.3 IMPORT DOCTOR NODES
+CALL {
+  LOAD CSV WITH HEADERS FROM
+  'https://raw.githubusercontent.com/Sonish1212/datafile/main/doctor.csv' AS row
+  WITH row
+  WHERE row.doctor_Id IS NOT NULL AND trim(row.doctor_Id) <> ''
+
+  WITH
+    toInteger(trim(row.doctor_Id)) AS doctorId,
+    CASE WHEN row.dept_Id IS NOT NULL AND trim(row.dept_Id) <> ''
+         THEN toInteger(trim(row.dept_Id)) ELSE NULL END AS deptId,
+    trim(coalesce(row.FName,'')) AS firstName,
+    trim(coalesce(row.LName,'')) AS lastName,
+    toLower(trim(coalesce(row.Gender,''))) AS gender,
+    trim(coalesce(row.contact_No,'')) AS contact,
+    trim(coalesce(row.surgeon_Type,'')) AS surgeonType,
+    trim(coalesce(row.office_No,'')) AS officeNo
+
+  MERGE (d:Doctor {doctorId: doctorId})
+  SET d.name = trim(firstName + ' ' + lastName),
+      d.gender = gender,
+      d.contact = contact,
+      d.surgeonType = surgeonType,
+      d.officeNo = officeNo,
+      d.deptId = deptId;
+} IN TRANSACTIONS OF 1000 ROWS;
+
+
+-- 2.4 IMPORT APPOINTMENT NODES
+CALL {
+  LOAD CSV WITH HEADERS FROM
+  'https://raw.githubusercontent.com/Sonish1212/datafile/main/appointment.csv' AS row
+  WITH row
+  WHERE row.appoIntment_Id IS NOT NULL AND trim(row.appoIntment_Id) <> ''
+
+  WITH
+    toInteger(trim(row.appoIntment_Id)) AS appointmentId,
+    CASE WHEN row.patient_Id IS NOT NULL AND trim(row.patient_Id) <> ''
+         THEN toInteger(trim(row.patient_Id)) ELSE NULL END AS patientId,
+    CASE WHEN row.doctor_Id IS NOT NULL AND trim(row.doctor_Id) <> ''
+         THEN toInteger(trim(row.doctor_Id)) ELSE NULL END AS doctorId,
+    trim(coalesce(row.reason,'')) AS reason,
+    CASE
+      WHEN row.appointment_Date IS NOT NULL AND trim(row.appointment_Date) <> ''
+      THEN date(datetime({
+        year:  toInteger(split(trim(row.appointment_Date),'/')[2]),
+        month: toInteger(split(trim(row.appointment_Date),'/')[1]),
+        day:   toInteger(split(trim(row.appointment_Date),'/')[0])
+      }))
+      ELSE NULL END AS apptDate,
+    CASE WHEN row.payment_amount IS NOT NULL AND trim(row.payment_amount) <> ''
+         THEN toFloat(trim(row.payment_amount)) ELSE NULL END AS paymentAmount,
+    trim(coalesce(row.mode_of_payment,'')) AS modeOfPayment,
+    trim(coalesce(row.mode_of_appointment,'')) AS modeOfAppointment,
+    trim(coalesce(row.appointment_status,'')) AS status
+
+  MERGE (a:Appointment {appointmentId: appointmentId})
+  SET a.date = apptDate,
+      a.reason = reason,
+      a.paymentAmount = paymentAmount,
+      a.modeOfPayment = modeOfPayment,
+      a.modeOfAppointment = modeOfAppointment,
+      a.status = status,
+      a.patientId = patientId,
+      a.doctorId = doctorId;
+} IN TRANSACTIONS OF 1000 ROWS;
+
+
+-- 2.5 IMPORT MEDICAL REPORT NODES
+CALL {
+  LOAD CSV WITH HEADERS FROM
+  'https://raw.githubusercontent.com/Sonish1212/datafile/main/reports.csv' AS row
+  WITH row
+  WHERE row.record_Id IS NOT NULL AND trim(row.record_Id) <> ''
+
+  WITH
+    toInteger(trim(row.record_Id)) AS reportId,
+    CASE WHEN row.patient_Id IS NOT NULL AND trim(row.patient_Id) <> ''
+         THEN toInteger(trim(row.patient_Id)) ELSE NULL END AS patientId,
+    CASE WHEN row.doctor_Id IS NOT NULL AND trim(row.doctor_Id) <> ''
+         THEN toInteger(trim(row.doctor_Id)) ELSE NULL END AS doctorId,
+    CASE
+      WHEN row.visit_Date IS NOT NULL AND trim(row.visit_Date) <> ''
+      THEN date(datetime({
+        year:  toInteger(split(trim(row.visit_Date),'/')[2]),
+        month: toInteger(split(trim(row.visit_Date),'/')[1]),
+        day:   toInteger(split(trim(row.visit_Date),'/')[0])
+      }))
+      ELSE NULL END AS visitDate,
+    CASE
+      WHEN row.next_Visit IS NOT NULL AND trim(row.next_Visit) <> ''
+      THEN date(datetime({
+        year:  toInteger(split(trim(row.next_Visit),'/')[2]),
+        month: toInteger(split(trim(row.next_Visit),'/')[1]),
+        day:   toInteger(split(trim(row.next_Visit),'/')[0])
+      }))
+      ELSE NULL END AS nextVisit,
+    CASE WHEN row.curr_Weight IS NOT NULL AND trim(row.curr_Weight) <> ''
+         THEN toFloat(trim(row.curr_Weight)) ELSE NULL END AS currWeight,
+    CASE WHEN row.curr_height IS NOT NULL AND trim(row.curr_height) <> ''
+         THEN toFloat(trim(row.curr_height)) ELSE NULL END AS currHeight,
+    CASE WHEN row.curr_Temp_F IS NOT NULL AND trim(row.curr_Temp_F) <> ''
+         THEN toFloat(trim(row.curr_Temp_F)) ELSE NULL END AS currTempF,
+    trim(coalesce(row.curr_Blood_Pressure,'')) AS bpString,
+    trim(coalesce(row.diagnosis,'')) AS diagnosis,
+    trim(coalesce(row.treatment,'')) AS treatment
+
+  WITH *, 
+       CASE WHEN bpString CONTAINS '/' THEN toInteger(split(bpString,'/')[0]) ELSE NULL END AS systolic,
+       CASE WHEN bpString CONTAINS '/' THEN toInteger(split(bpString,'/')[1]) ELSE NULL END AS diastolic
+
+  MERGE (r:MedicalReport {reportId: reportId})
+  SET r.visitDate = visitDate,
+      r.nextVisit = nextVisit,
+      r.currWeight = currWeight,
+      r.currHeight = currHeight,
+      r.currTempF = currTempF,
+      r.bp = bpString,
+      r.systolic = systolic,
+      r.diastolic = diastolic,
+      r.diagnosis = diagnosis,
+      r.treatment = treatment,
+      r.patientId = patientId,
+      r.doctorId = doctorId;
+} IN TRANSACTIONS OF 1000 ROWS;
+
+--------------------------------------------------------------------
+SECTION 3: CREATE RELATIONSHIPS
+--------------------------------------------------------------------
+
+-- 3.1 Doctor -> Department
+CALL {
+  LOAD CSV WITH HEADERS FROM
+  'https://raw.githubusercontent.com/Sonish1212/datafile/main/doctor.csv' AS row
+  WITH row
+  WHERE row.doctor_Id IS NOT NULL AND trim(row.doctor_Id) <> ''
+    AND row.dept_Id IS NOT NULL AND trim(row.dept_Id) <> ''
+  MATCH (d:Doctor {doctorId: toInteger(trim(row.doctor_Id))})
+  MATCH (dep:Department {deptId: toInteger(trim(row.dept_Id))})
+  MERGE (d)-[:WORKS_IN]->(dep);
+} IN TRANSACTIONS OF 1000 ROWS;
+
+
+-- 3.2 Patient -> Appointment & Doctor -> Appointment
+CALL {
+  LOAD CSV WITH HEADERS FROM
+  'https://raw.githubusercontent.com/Sonish1212/datafile/main/appointment.csv' AS row
+  WITH row
+  WHERE row.appoIntment_Id IS NOT NULL AND trim(row.appoIntment_Id) <> ''
+  MATCH (a:Appointment {appointmentId: toInteger(trim(row.appoIntment_Id))})
+  OPTIONAL MATCH (p:Patient {patientId: toInteger(trim(row.patient_Id))})
+  FOREACH (_ IN CASE WHEN p IS NOT NULL THEN [1] ELSE [] END |
+    MERGE (p)-[:BOOKED]->(a))
+  OPTIONAL MATCH (d:Doctor {doctorId: toInteger(trim(row.doctor_Id))})
+  FOREACH (_ IN CASE WHEN d IS NOT NULL THEN [1] ELSE [] END |
+    MERGE (d)-[:ATTENDED]->(a));
+} IN TRANSACTIONS OF 1000 ROWS;
+
+
+-- 3.3 Patient -> MedicalReport & Doctor -> MedicalReport
+CALL {
+  LOAD CSV WITH HEADERS FROM
+  'https://raw.githubusercontent.com/Sonish1212/datafile/main/reports.csv' AS row
+  WITH row
+  WHERE row.record_Id IS NOT NULL AND trim(row.record_Id) <> ''
+    AND row.patient_Id IS NOT NULL AND trim(row.patient_Id) <> ''
+  MATCH (p:Patient {patientId: toInteger(trim(row.patient_Id))})
+  MATCH (r:MedicalReport {reportId: toInteger(trim(row.record_Id))})
+  MERGE (p)-[:HAS_REPORT]->(r);
+} IN TRANSACTIONS OF 1000 ROWS;
+
+CALL {
+  LOAD CSV WITH HEADERS FROM
+  'https://raw.githubusercontent.com/Sonish1212/datafile/main/reports.csv' AS row
+  WITH row
+  WHERE row.record_Id IS NOT NULL AND trim(row.record_Id) <> ''
+    AND row.doctor_Id IS NOT NULL AND trim(row.doctor_Id) <> ''
+  MATCH (d:Doctor {doctorId: toInteger(trim(row.doctor_Id))})
+  MATCH (r:MedicalReport {reportId: toInteger(trim(row.record_Id))})
+  MERGE (d)-[:WRITES]->(r);
+} IN TRANSACTIONS OF 1000 ROWS;
+
+--------------------------------------------------------------------
+SECTION 4: CENTRALITY ALGORITHMS
+--------------------------------------------------------------------
+
+MATCH (d:Doctor)-[:WORKS_IN]->(dep:Department)
+
+MATCH (d)-[:ATTENDED]->(:Appointment)<-[:BOOKED]-(p:Patient)
+
+RETURN dep.name AS Department, d.name AS Doctor, COUNT(DISTINCT p) AS TotalPatients
+
+ORDER BY TotalPatients DESC;
+
+====================================================================
+SECTION 5: SIMILARITY ALGORITHMS
+====================================================================
+/* Doctor–Doctor Similarity (Shared Patients) */
+
+MATCH (d1:Doctor)-[:ATTENDED]->(:Appointment)<-[:BOOKED]-(p:Patient),
+      (d2:Doctor)-[:ATTENDED]->(:Appointment)<-[:BOOKED]-(p)
+WHERE id(d1) < id(d2)
+WITH d1, d2, COUNT(DISTINCT p) AS sharedPatients
+RETURN 
+d1.name AS Doctor1,
+d2.name AS Doctor2, 
+sharedPatients
+ORDER BY sharedPatients DESC 
+LIMIT 30;
+
+/* Patient ↔ Patient similarity (shared doctors) */
+
+MATCH (p1:Patient)-[:BOOKED]->(:Appointment)<-[:ATTENDED]-(d:Doctor),
+      (p2:Patient)-[:BOOKED]->(:Appointment)<-[:ATTENDED]-(d)
+WHERE id(p1) < id(p2)
+WITH p1, p2, COUNT(DISTINCT d) AS sharedDoctors
+WHERE sharedDoctors > 0
+RETURN 
+  p1.name AS Patient1,
+  p2.name AS Patient2,
+  sharedDoctors
+ORDER BY sharedDoctors DESC
+LIMIT 30;
+
+/* Collect, for each patient, the DISTINCT set of doctors they saw */
+
+MATCH (p:Patient)-[:BOOKED]->(:Appointment)<-[:ATTENDED|:ATTENDED_BY]-(d:Doctor)
+WITH p.patientId AS pid, collect(DISTINCT d.doctorId) AS docs
+WITH collect({pid: pid, docs: docs}) AS rows
+
+// Pairwise compare patients to compute Jaccard = |A∩B| / |A∪B| 
+
+UNWIND rows AS a
+UNWIND rows AS b
+WITH a, b
+WHERE a.pid < b.pid
+// keep both sets alive through each WITH
+WITH a.pid AS p1, b.pid AS p2, a.docs AS A, b.docs AS B
+WITH p1, p2, A, B,
+     size([x IN A WHERE x IN B]) AS inter,
+     size(A) + size(B) - size([x IN A WHERE x IN B]) AS unionSize
+WITH p1, p2,
+     CASE WHEN unionSize = 0 THEN 0.0 ELSE toFloat(inter) / unionSize END AS jaccard
+WHERE jaccard >= 0.10        // tweak threshold as needed
+
+// Write similarity edges 
+
+MATCH (pA:Patient {patientId: p1}), (pB:Patient {patientId: p2})
+MERGE (pA)-[r:SIMILAR_PATIENT]->(pB)
+SET r.score = jaccard;
+
+// Quick check
+MATCH (p:Patient)-[r:SIMILAR_PATIENT]->(q:Patient)
+RETURN p.patientId AS patient, q.patientId AS similarPatient, r.score AS score
+ORDER BY patient, score DESC
+LIMIT 20;
+
+/* Create SIMILAR_DOCTOR edges between doctors who share at least one patient */
+MATCH (d1:Doctor)--(:Appointment)--(p:Patient)--(:Appointment)--(d2:Doctor)
+WHERE id(d1) < id(d2)
+WITH d1, d2, count(DISTINCT p) AS sharedPatients
+WHERE sharedPatients > 0
+MERGE (d1)-[r:SIMILAR_DOCTOR]->(d2)
+SET r.sharedPatients = sharedPatients,
+    r.score = toFloat(sharedPatients),
+    r.createdAt = datetime()
+RETURN d1.name AS Doctor1, d2.name AS Doctor2, r.sharedPatients AS sharedPatients, r.score AS SimilarityScore
+ORDER BY r.sharedPatients DESC
+LIMIT 30;
+
+/* Similar Doctor Relationship Graph */
+MATCH p=()-[:SIMILAR_DOCTOR]->() RETURN p LIMIT 25;
+
+/* Similar Patient Relationship Graph */
+MATCH p=()-[:SIMILAR_PATIENT]->() RETURN p LIMIT 25;

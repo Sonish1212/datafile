@@ -1,0 +1,78 @@
+CASE 1 (Filtering Patients)
+
+MATCH (p:Patient)
+WHERE toLower(p.gender) STARTS WITH 'f'
+  AND p.address IS NOT NULL AND trim(p.address) <> ''
+RETURN p.patientId AS patientId,
+       p.name AS name,
+       p.dob  AS dob,
+       p.gender AS gender,
+       p.address AS address
+ORDER BY p.name
+LIMIT 5;
+
+
+CASE 2.0(Completed appointments with payment range any reason)
+
+MATCH (p:Patient)-[:BOOKED]->(a:Appointment)<-[:ATTENDED]-(d:Doctor)
+WHERE a.status = 'Completed'
+  AND toFloat(a.payment) >= 50
+  AND toFloat(a.payment) <= 3000
+RETURN a.appointmentId AS appointmentId, 
+       a.date AS date, 
+       a.reason AS reason, 
+       toFloat(a.payment) AS payment, 
+       p.name AS patient, 
+       d.name AS doctor
+ORDER BY date DESC
+LIMIT 5;
+
+
+CASE 2.1 (SHOWS GENERAL CHECKUP ONLY)
+
+MATCH (p:Patient)-[:BOOKED]->(a:Appointment)<-[:ATTENDED]-(d:Doctor)
+WHERE a.status = 'Completed'
+  AND toFloat(a.payment) >= 50
+  AND toFloat(a.payment) <= 3000
+  AND toLower(a.reason) CONTAINS 'checkup'
+RETURN a.appointmentId AS appointmentId, 
+       a.date AS date, 
+       a.reason AS reason, 
+       toFloat(a.payment) AS payment, 
+       p.name AS patient, 
+       d.name AS doctor
+ORDER BY a.date DESC
+LIMIT 5;
+
+
+CASE 3(Doctor with their respective department and Appointment counts)
+
+MATCH (d:Doctor)
+OPTIONAL MATCH (d)-[:WORKS_IN]->(dep:Department)
+OPTIONAL MATCH (d)-[:ATTENDED]->(a:Appointment)
+WITH d, dep, count(a) AS apptCount
+RETURN d.doctorId AS doctorId, 
+       d.name AS doctor, 
+       coalesce(dep.name, 'N/A') AS department, 
+       apptCount
+ORDER BY apptCount DESC, doctor ASC
+LIMIT 5;
+
+
+CASE 4(Patients with High-Spending)
+
+MATCH (p:Patient)-[:BOOKED]->(a:Appointment)
+WHERE a.status = 'Completed'
+WITH p, sum(toFloat(a.payment)) AS totalPayment
+WITH collect({p: p, total: totalPayment}) AS rows
+UNWIND rows AS row
+WITH rows, avg(row.total) AS globalAvg
+UNWIND rows AS row
+WITH row.p AS p, row.total AS totalPayment, globalAvg
+WHERE totalPayment > globalAvg
+RETURN p.patientId AS patientId,
+       p.name AS patient,
+       round(totalPayment, 2) AS totalPayment,
+       round(globalAvg, 2) AS globalAvg
+ORDER BY totalPayment DESC
+LIMIT 5;
